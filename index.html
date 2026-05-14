@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Puzzle Game</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="icon" type="image/x-icon" href="favicon.png">
+</head>
+<body>
+    <h1>Puzzle Game</h1>
+
+    <h2 id="level" style="text-align: center;">Level N/A</h2>
+
+    <div id="level-selector" class="level-selector" aria-label="Level selector"></div>
+
+    <canvas id="game"></canvas>
+
+    <div class="controls">
+        <button id="btn-up" aria-label="Move up">↑</button>
+        <div class="controls-row">
+            <button id="btn-left" aria-label="Move left">←</button>
+            <button id="btn-down" aria-label="Move down">↓</button>
+            <button id="btn-right" aria-label="Move right">→</button>
+        </div>
+        <button id="btn-reset" aria-label="Reset level">Reset level ↻</button>
+    </div>
+
+    <script type="module" src="game.js"></script>
+</body>
+</html>

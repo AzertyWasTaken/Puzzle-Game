@@ -1,18 +1,18 @@
 "use strict";
 import {log} from "./log.js";
 import {gameplay} from "./gameplay.js";
-import {getAssets, drawCanvas} from "./render.js";
+import {getAssets, drawImage, drawCanvas, setCanvas} from "./render.js";
 
 // Init variables
 // ================================================================
 
+setCanvas("game");
 const el_level = document.getElementById("level");
-const canvas = document.getElementById("game");
 
 let level = 0;
 let levelData = getLevelData();
+let isLevelCompleted = false;
 
-const TILE_SIZE = 64;
 const assets = getAssets(draw);
 
 // Helpers
@@ -27,7 +27,7 @@ function getLevelData() {
 }
 
 function draw() {
-    drawCanvas(canvas, levelData, TILE_SIZE, assets, false);
+    drawCanvas(levelData, assets, false, override);
 }
 
 function getCell(layer, x, y) {
@@ -36,6 +36,78 @@ function getCell(layer, x, y) {
 
 function setCell(layer, x, y, id) {
     layer[y][x] = id;
+}
+
+// Audio
+// ================================================================
+
+const SOUND_PATH = "./assets/"
+
+function playSound(src, vol = 0.5) {
+    try {
+        const sound = new Audio(SOUND_PATH + src);
+        sound.volume = vol;
+        // Best-effort: ignore autoplay blocks (promises rejection) without breaking the game.
+        const p = sound.play();
+        if (p && typeof p.catch === "function") p.catch(() => {});
+    } catch (e) {
+        // ignore
+    }
+}
+
+// Animation
+// ================================================================
+
+const ANIM_DURATION_MS = 100;
+let anim = [];
+let override = [];
+let canMove = true;
+
+function easeOutCubic(t) {
+    return 1 - Math.pow(1 - t, 3);
+}
+
+function setOverride(x, y, state) {
+    override[y] ??= [];
+    override[y][x] = state;
+}
+
+function startAnimation(from, to, block) {
+    setOverride(...to, true);
+
+    anim.push({
+        startMs: performance.now(),
+        durationMs: ANIM_DURATION_MS,
+        block: block === "P" ? assets.player : assets.box,
+        from: from,
+        to: to,
+    });
+}
+
+function tickAnimation(nowMs) {
+    draw();
+
+    for (let i = anim.length - 1; i >= 0; i--) {
+        const obj = anim[i];
+
+        const elapsed = nowMs - obj.startMs;
+        const t = Math.min(1, Math.max(0, elapsed / obj.durationMs));
+        const k = easeOutCubic(t);
+
+        const px = obj.from[0] + (obj.to[0] - obj.from[0]) * k;
+        const py = obj.from[1] + (obj.to[1] - obj.from[1]) * k;
+
+        if (t >= 1) {
+            setOverride(...obj.to, false);
+            anim.splice(i, 1);
+            canMove = true;
+            draw();
+        } else {
+            drawImage(px, py, obj.block);
+        }
+    }
+
+    if (anim.length > 0) requestAnimationFrame(tickAnimation);
 }
 
 // Level selector
@@ -90,8 +162,7 @@ function createLevelSelector() {
             // Optional: prevent jumping ahead past the current unlocked level.
             // If you want strict locking later, compute it from completedLevels.
             goToLevel(idx);
-            // Reset uses current `level` index.
-            resetLevel();
+            playSound("select_level.wav", 1);
         });
 
         el_levelSelector.appendChild(btn);
@@ -118,6 +189,9 @@ function updateLevelSelector() {
 function goToLevel(n) {
     level = n;
 
+    // Reset per-level one-time completion sound.
+    isLevelCompleted = false;
+
     if (level >= gameplay.length) {
         el_level.textContent = "Game completed!";
     } else {
@@ -125,14 +199,12 @@ function goToLevel(n) {
     }
 
     levelData = getLevelData();
+    override = [];
+    anim = [];
+    canMove = true;
+
     draw();
     updateLevelSelector();
-}
-
-function resetLevel() {
-    if (!levelData) return;
-
-    goToLevel(level);
 }
 
 loadCompletedLevels();
@@ -172,7 +244,21 @@ function isGameCompleted() {
     return true;
 }
 
-// Actions
+function checkCompletion() {
+    if (isGameCompleted()) {
+        playSound("level_complete.wav", 0.25);
+
+        completedLevels.add(level);
+        persistCompletedLevels();
+        isLevelCompleted = true
+
+        setTimeout(() => {
+            goToLevel(level + 1);
+        }, 250);
+    }
+}
+
+// Move
 // ================================================================
 
 function findPlayer() {
@@ -184,44 +270,51 @@ function findPlayer() {
     }
 }
 
+function slide(layer, from, to) {
+    const block = getCell(layer, ...from);
+
+    setCell(layer, ...to, block);
+    setCell(layer, ...from, ".");
+
+    startAnimation(from, to, block);
+}
+
 function move(x, y) {
-    if (!levelData) return;
+    if (isLevelCompleted || !canMove || !levelData) return;
 
     const blocks = levelData.blocks;
     const currPos = findPlayer();
     if (!currPos) return;
 
     const nextPos = addPos(currPos, [x, y]);
-    const [nx, ny] = nextPos;
+    const nextBlock = getCell(blocks, ...nextPos);
 
-    const nextBlock = getCell(blocks, nx, ny);
-    if (nextBlock === "B") {
+    if (nextBlock === ".") {
+        // Simple move
+        slide(blocks, currPos, nextPos);
+        requestAnimationFrame(tickAnimation);
+        playSound("move_player.wav", 0.15);
+        canMove = false;
+    }
+    else if (nextBlock === "B") {
+        // Push move
         const boxPos = addPos(nextPos, [x, y]);
-        const [bx, by] = boxPos;
-
-        const boxBlock = getCell(blocks, bx, by);
+        const boxBlock = getCell(blocks, ...boxPos);
         if (boxBlock !== ".") return;
 
         // Push
-        setCell(blocks, bx, by, "B");
-        setCell(blocks, nx, ny, "P");
-        setCell(blocks, currPos[0], currPos[1], ".");
-        draw();
-    } else if (nextBlock === ".") {
-        setCell(blocks, nx, ny, "P");
-        setCell(blocks, currPos[0], currPos[1], ".");
-        draw();
-    } else {
-        // ignore other block types
+        slide(blocks, nextPos, boxPos);
+        slide(blocks, currPos, nextPos);
+        requestAnimationFrame(tickAnimation);
+        playSound("move_player.wav", 0.15);
+        canMove = false;
+    }
+    else {
+        // Ignore other block types
         return;
     }
 
-    // Completion checks
-    if (isGameCompleted()) {
-        completedLevels.add(level);
-        persistCompletedLevels();
-        goToLevel(level + 1);
-    }
+    checkCompletion();
 }
 
 // Controls
@@ -255,4 +348,4 @@ document.addEventListener("keydown", (e) => {
     if (e.key === "ArrowRight") move(1, 0);
 });
 
-bindButton("btn-reset", () => resetLevel());
+bindButton("btn-reset", () => goToLevel(level));

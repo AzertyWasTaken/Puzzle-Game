@@ -1,7 +1,9 @@
 "use strict";
 import {log} from "./log.js";
 import {gameplay} from "./gameplay.js";
-import {getAssets, drawCanvas} from "./render.js";
+import {getAssets, drawCanvas, setCanvas} from "./render.js";
+
+setCanvas("editor-canvas");
 
 const FLOOR_TILES = new Set([".", "T", "X"]);
 const BLOCK_TILES = new Set([".", "#", "P", "B"]);
@@ -26,7 +28,6 @@ function cloneLayer(layer) {
 let level = 0;
 let editorFloor = getFloorLayer();
 let editorBlocks = getBlocksLayer();
-
 let editorTile = "#"; // palette char selection (either floor or blocks tile)
 
 // Backward compatible init helpers
@@ -90,7 +91,7 @@ function loadSavedGridDimsOrDefault() {
     return [w, h];
 }
 
-// Parser / Unparser
+// Parser / unparser
 // ================================================================
 // Editor textbox format: {floor: [[...]], blocks: [[...]]}
 
@@ -192,18 +193,7 @@ function asciiToEditorState(lines) {
     return {floor, blocks};
 }
 
-// Load assets
-// ================================================================
-
-const TILE_SIZE = 64;
-
-const assets = getAssets(draw);
-
-function draw() {
-    drawCanvas(el_canvas, {floor: editorFloor, blocks: editorBlocks}, TILE_SIZE, assets, true);
-}
-
-// Actions
+// Apply from text
 // ================================================================
 
 function setEditorState(newFloor, newBlocks) {
@@ -215,14 +205,36 @@ function setEditorState(newFloor, newBlocks) {
     draw();
 }
 
-function resetEditor() {
-    editorFloor = getFloorLayer();
-    editorBlocks = getBlocksLayer();
-
-    lastRenderedAscii = editorStateToText(editorFloor, editorBlocks);
-    el_text.value = lastRenderedAscii;
-    draw();
+function applyFromText() {
+    const state = asciiToEditorState(el_text.value);
+    setEditorState(state.floor, state.blocks);
 }
+
+document.getElementById("btn-editor-apply").addEventListener("click", () => {
+    try {
+        applyFromText();
+        el_status.textContent = "Applied from text.";
+    } catch (err) {
+        el_status.textContent = String(err?.message || err);
+    }
+});
+
+// Load assets
+// ================================================================
+
+const TILE_SIZE = 64;
+
+const assets = getAssets(draw);
+
+function draw() {
+    drawCanvas({floor: editorFloor, blocks: editorBlocks}, assets, true, []);
+}
+
+// Remove row/column
+// ================================================================
+
+const el_removeRow = document.getElementById("editor-remove-row");
+const el_removeCol = document.getElementById("editor-remove-col");
 
 function removeRowFromLayer(layer, rowIdx0) {
     // layer: 2D array [h][w]
@@ -266,6 +278,121 @@ function applyAndRedraw(nextFloor, nextBlocks) {
     draw();
 }
 
+document.getElementById("btn-editor-remove-row").addEventListener("click", () => {
+    const currH = editorFloor.length || editorBlocks.length;
+    const currW = editorFloor[0]?.length ?? editorBlocks[0]?.length ?? 0;
+
+    if (!currH || !currW) return;
+
+    const row1 = Number(el_removeRow?.value);
+    const rowIdx0 = row1 - 1;
+
+    if (!Number.isInteger(row1)) {
+        el_status.textContent = "Row index must be an integer (1-based).";
+        return;
+    }
+    if (rowIdx0 < 0 || rowIdx0 >= currH) {
+        el_status.textContent = `Row must be between 1 and ${currH}.`;
+        return;
+    }
+    if (currH <= 1) {
+        el_status.textContent = "Cannot remove the last row.";
+        return;
+    }
+
+    const nextFloor = removeRowFromLayer(editorFloor, rowIdx0);
+    const nextBlocks = removeRowFromLayer(editorBlocks, rowIdx0);
+    applyAndRedraw(nextFloor, nextBlocks);
+    el_status.textContent = `Removed row ${row1}.`;
+});
+
+document.getElementById("btn-editor-remove-col").addEventListener("click", () => {
+    const currH = editorFloor.length || editorBlocks.length;
+    const currW = editorFloor[0]?.length ?? editorBlocks[0]?.length ?? 0;
+
+    if (!currH || !currW) return;
+
+    const col1 = Number(el_removeCol?.value);
+    const colIdx0 = col1 - 1;
+
+    if (!Number.isInteger(col1)) {
+        el_status.textContent = "Column index must be an integer (1-based).";
+        return;
+    }
+    if (colIdx0 < 0 || colIdx0 >= currW) {
+        el_status.textContent = `Column must be between 1 and ${currW}.`;
+        return;
+    }
+    if (currW <= 1) {
+        el_status.textContent = "Cannot remove the last column.";
+        return;
+    }
+
+    const nextFloor = removeColumnFromLayer(editorFloor, colIdx0);
+    const nextBlocks = removeColumnFromLayer(editorBlocks, colIdx0);
+    applyAndRedraw(nextFloor, nextBlocks);
+    el_status.textContent = `Removed column ${col1}.`;
+});
+
+// Level selector
+// ================================================================
+
+function syncSelector() {
+    if (!el_levelSelector) return;
+    const buttons = el_levelSelector.querySelectorAll("button[data-level-index]");
+    buttons.forEach((btn) => {
+        const idx = Number(btn.dataset.levelIndex);
+        btn.setAttribute("aria-current", idx === level ? "true" : "false");
+    });
+}
+
+function createLevelSelector() {
+    if (!el_levelSelector) return;
+    el_levelSelector.innerHTML = "";
+
+    const total = gameplay.length;
+    for (let i = 0; i < total; i++) {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.textContent = `${i + 1}`;
+        btn.dataset.levelIndex = String(i);
+
+        btn.addEventListener("click", () => {
+            const idx = Number(btn.dataset.levelIndex);
+            if (!Number.isInteger(idx) || idx < 0 || idx >= gameplay.length) return;
+            level = idx;
+            try {
+                localStorage.setItem(LS_KEY_EDITOR_LAST_LEVEL, String(level));
+            } catch (e) {
+                // ignore
+            }
+            syncSelector();
+            resetEditor();
+        });
+
+        el_levelSelector.appendChild(btn);
+    }
+}
+
+// Reset editor
+// ================================================================
+
+function resetEditor() {
+    editorFloor = getFloorLayer();
+    editorBlocks = getBlocksLayer();
+
+    lastRenderedAscii = editorStateToText(editorFloor, editorBlocks);
+    el_text.value = lastRenderedAscii;
+    draw();
+}
+
+document.getElementById("btn-editor-reset")?.addEventListener("click", () => {
+    resetEditor();
+    el_status.textContent = "Reset editor to current level.";
+});
+
+// Export to clipboard
+// ================================================================
 
 async function exportToClipboard() {
     const text = el_text.value;
@@ -284,26 +411,12 @@ async function exportToClipboard() {
     }
 }
 
-function applyFromText() {
-    const state = asciiToEditorState(el_text.value);
-    setEditorState(state.floor, state.blocks);
-}
+document.getElementById("btn-editor-export").addEventListener("click", () => {
+    exportToClipboard();
+});
 
-function syncSelector() {
-    if (!el_levelSelector) return;
-    const buttons = el_levelSelector.querySelectorAll("button[data-level-index]");
-    buttons.forEach((btn) => {
-        const idx = Number(btn.dataset.levelIndex);
-        btn.setAttribute("aria-current", idx === level ? "true" : "false");
-    });
-}
-
-function syncPalette() {
-    document.querySelectorAll(".block-selector[data-tile]").forEach((btn) => {
-        const t = btn.dataset.tile;
-        btn.classList.toggle("selected", t === editorTile);
-    });
-}
+// Place block
+// ================================================================
 
 function placeAt(x, y) {
     const h = editorFloor.length || editorBlocks.length;
@@ -328,9 +441,6 @@ function placeAt(x, y) {
     draw();
 }
 
-// Buttons
-// ================================================================
-
 el_canvas.addEventListener("click", (e) => {
     const rect = el_canvas.getBoundingClientRect();
     const mx = e.clientX - rect.left;
@@ -342,23 +452,15 @@ el_canvas.addEventListener("click", (e) => {
     placeAt(x, y);
 });
 
-document.getElementById("btn-editor-apply")?.addEventListener("click", () => {
-    try {
-        applyFromText();
-        el_status.textContent = "Applied from text.";
-    } catch (err) {
-        el_status.textContent = String(err?.message || err);
-    }
-});
+// Select block
+// ================================================================
 
-document.getElementById("btn-editor-reset")?.addEventListener("click", () => {
-    resetEditor();
-    el_status.textContent = "Reset editor to current level.";
-});
-
-document.getElementById("btn-editor-export")?.addEventListener("click", () => {
-    exportToClipboard();
-});
+function syncPalette() {
+    document.querySelectorAll(".block-selector[data-tile]").forEach((btn) => {
+        const t = btn.dataset.tile;
+        btn.classList.toggle("selected", t === editorTile);
+    });
+}
 
 document.querySelectorAll(".block-selector[data-tile]").forEach((btn) => {
     btn.addEventListener("click", () => {
@@ -370,33 +472,6 @@ document.querySelectorAll(".block-selector[data-tile]").forEach((btn) => {
 
 // Init
 // ================================================================
-
-function createLevelSelector() {
-    if (!el_levelSelector) return;
-
-    el_levelSelector.innerHTML = "";
-
-    const total = gameplay.length;
-    for (let i = 0; i < total; i++) {
-        const btn = document.createElement("button");
-        btn.type = "button";
-        btn.textContent = `${i + 1}`;
-        btn.dataset.levelIndex = String(i);
-        btn.addEventListener("click", () => {
-            const idx = Number(btn.dataset.levelIndex);
-            if (!Number.isInteger(idx) || idx < 0 || idx >= gameplay.length) return;
-            level = idx;
-            try {
-                localStorage.setItem(LS_KEY_EDITOR_LAST_LEVEL, String(level));
-            } catch (e) {
-                // ignore
-            }
-            syncSelector();
-            resetEditor();
-        });
-        el_levelSelector.appendChild(btn);
-    }
-}
 
 function resizeGrid(newW, newH) {
     newW = clampInt(newW, 1, 64);
@@ -475,6 +550,9 @@ function init() {
     const idx = Number(raw);
     if (Number.isInteger(idx) && idx >= 0 && idx < gameplay.length) {
         level = idx;
+        let editorFloor = getFloorLayer();
+        let editorBlocks = getBlocksLayer();
+        resetEditor();
     }
 
     createLevelSelector();
@@ -485,66 +563,6 @@ function init() {
 
     syncPalette();
     bindResizeUI();
-
-    // Remove row/column UI
-    const el_removeRow = document.getElementById("editor-remove-row");
-    const el_removeCol = document.getElementById("editor-remove-col");
-
-    document.getElementById("btn-editor-remove-row")?.addEventListener("click", () => {
-        const currH = editorFloor.length || editorBlocks.length;
-        const currW = editorFloor[0]?.length ?? editorBlocks[0]?.length ?? 0;
-
-        if (!currH || !currW) return;
-
-        const row1 = Number(el_removeRow?.value);
-        const rowIdx0 = row1 - 1;
-
-        if (!Number.isInteger(row1)) {
-            el_status.textContent = "Row index must be an integer (1-based).";
-            return;
-        }
-        if (rowIdx0 < 0 || rowIdx0 >= currH) {
-            el_status.textContent = `Row must be between 1 and ${currH}.`;
-            return;
-        }
-        if (currH <= 1) {
-            el_status.textContent = "Cannot remove the last row.";
-            return;
-        }
-
-        const nextFloor = removeRowFromLayer(editorFloor, rowIdx0);
-        const nextBlocks = removeRowFromLayer(editorBlocks, rowIdx0);
-        applyAndRedraw(nextFloor, nextBlocks);
-        el_status.textContent = `Removed row ${row1}.`;
-    });
-
-    document.getElementById("btn-editor-remove-col")?.addEventListener("click", () => {
-        const currH = editorFloor.length || editorBlocks.length;
-        const currW = editorFloor[0]?.length ?? editorBlocks[0]?.length ?? 0;
-
-        if (!currH || !currW) return;
-
-        const col1 = Number(el_removeCol?.value);
-        const colIdx0 = col1 - 1;
-
-        if (!Number.isInteger(col1)) {
-            el_status.textContent = "Column index must be an integer (1-based).";
-            return;
-        }
-        if (colIdx0 < 0 || colIdx0 >= currW) {
-            el_status.textContent = `Column must be between 1 and ${currW}.`;
-            return;
-        }
-        if (currW <= 1) {
-            el_status.textContent = "Cannot remove the last column.";
-            return;
-        }
-
-        const nextFloor = removeColumnFromLayer(editorFloor, colIdx0);
-        const nextBlocks = removeColumnFromLayer(editorBlocks, colIdx0);
-        applyAndRedraw(nextFloor, nextBlocks);
-        el_status.textContent = `Removed column ${col1}.`;
-    });
 
     draw();
 };

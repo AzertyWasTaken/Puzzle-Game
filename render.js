@@ -1,8 +1,17 @@
 "use strict";
+const TILE_SIZE = 64;
+
+let canvas, ctx
+export function setCanvas(id) {
+    canvas = document.getElementById(id);
+    ctx = canvas.getContext("2d");
+}
+
 export function getAssets(callback) {
-    function loadAsset(path) {
+    function loadAsset(path, color) {
         const obj = {img: new Image(), loaded: false};
         obj.img.src = path;
+        obj.color = color;
 
         obj.img.onload = () => {
             obj.loaded = true;
@@ -13,17 +22,28 @@ export function getAssets(callback) {
     }
 
     return {
-        player: loadAsset("./assets/player.png"),
-        playerTarget: loadAsset("./assets/player_target.png"),
-        box: loadAsset("./assets/box.png"),
-        boxTarget: loadAsset("./assets/box_target.png"),
+        player: loadAsset("./assets/player.png", "#00A0FF"),
+        playerTarget: loadAsset("./assets/player_target.png", "#FFE000"),
+        box: loadAsset("./assets/box.png", "#A06000"),
+        boxTarget: loadAsset("./assets/box_target.png", "#FF8000"),
     };
 }
 
-export function drawCanvas(canvas, level, tileSize, assets, grid) {
-    if (!canvas) return;
+function getCell(layer, x, y) {
+    return (layer[y] ?? [])[x];
+}
 
-    const ctx = canvas.getContext("2d");
+function drawBlock(x, y, color) {
+    ctx.fillStyle = color;
+    ctx.fillRect(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+}
+
+export function drawImage(x, y, img) {
+    if (img.loaded) ctx.drawImage(img.img, x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+    else drawBlock(x, y, img.color);
+}
+
+export function drawCanvas(level, assets, grid, override) {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
     const floor = level?.floor ?? [];
@@ -34,22 +54,8 @@ export function drawCanvas(canvas, level, tileSize, assets, grid) {
     const h = blocks.length || floor.length;
     const w = (blocks[0]?.length ?? floor[0]?.length ?? 0);
 
-    canvas.width = w * tileSize;
-    canvas.height = h * tileSize;
-
-    function getCell(layer, x, y) {
-        return (layer[y] ?? [])[x];
-    }
-
-    function drawBlock(x, y, color) {
-        ctx.fillStyle = color;
-        ctx.fillRect(x * tileSize, y * tileSize, tileSize, tileSize);
-    }
-
-    function drawImage(x, y, img, color) {
-        if (img.loaded) ctx.drawImage(img.img, x * tileSize, y * tileSize, tileSize, tileSize);
-        else drawBlock(x, y, color);
-    }
+    canvas.width = w * TILE_SIZE;
+    canvas.height = h * TILE_SIZE;
 
     // Background
     ctx.fillStyle = "#606060";
@@ -60,8 +66,8 @@ export function drawCanvas(canvas, level, tileSize, assets, grid) {
         for (let x = 0; x < floor[y].length; x++) {
             const tile = getCell(floor, x, y);
 
-            if (tile === "T") drawImage(x, y, assets.playerTarget, "#FFE000");
-            else if (tile === "X") drawImage(x, y, assets.boxTarget, "#FF8000");
+            if (tile === "T") drawImage(x, y, assets.playerTarget);
+            else if (tile === "X") drawImage(x, y, assets.boxTarget);
         }
     }
 
@@ -70,9 +76,12 @@ export function drawCanvas(canvas, level, tileSize, assets, grid) {
         for (let x = 0; x < blocks[y].length; x++) {
             const block = getCell(blocks, x, y);
 
+            // Hide moving objects during animation to avoid ghosting
+            if (getCell(override, x, y)) continue;
+
             if (block === "#") drawBlock(x, y, "#181818");
-            else if (block === "P") drawImage(x, y, assets.player, "#00A0FF");
-            else if (block === "B") drawImage(x, y, assets.box, "#A06000");
+            else if (block === "P") drawImage(x, y, assets.player);
+            else if (block === "B") drawImage(x, y, assets.box);
         }
     }
 
@@ -83,15 +92,15 @@ export function drawCanvas(canvas, level, tileSize, assets, grid) {
 
         for (let x = 1; x < w; x++) {
             ctx.beginPath();
-            ctx.moveTo(x * tileSize, 0);
-            ctx.lineTo(x * tileSize, canvas.height);
+            ctx.moveTo(x * TILE_SIZE, 0);
+            ctx.lineTo(x * TILE_SIZE, canvas.height);
             ctx.stroke();
         }
 
         for (let y = 1; y < h; y++) {
             ctx.beginPath();
-            ctx.moveTo(0, y * tileSize);
-            ctx.lineTo(canvas.width, y * tileSize);
+            ctx.moveTo(0, y * TILE_SIZE);
+            ctx.lineTo(canvas.width, y * TILE_SIZE);
             ctx.stroke();
         }
     }

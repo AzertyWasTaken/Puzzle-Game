@@ -11,9 +11,20 @@ This file is a shared task-board. When editing, only:
 ## Game
 
 - [x] Publish game
-- [ ] Add sounds
-- [ ] Animate movements
+- [x] Animate movements
 - [ ] Design more levels (with multiple pushboxes)
+- [ ] Module grid helpers
+- [ ] Merge move functions
+- [ ] Merge btn-editor-remove functions
+- [ ] Undo move
+
+### Audio
+
+- [x] Level completed sound
+- [x] Move player sound
+- [x] Select level sound
+- [ ] Set sound volume
+- [ ] Background music
 
 ### G/Ideas
 

@@ -48,10 +48,6 @@ code {
     border-radius: 4px;
 }
 
-a {
-    color: #FFE040;
-}
-
 label {
     display: flex;
     align-items: center;

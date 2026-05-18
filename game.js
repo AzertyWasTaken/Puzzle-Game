@@ -244,7 +244,7 @@ function isGameCompleted() {
     return true;
 }
 
-function checkCompletion() {
+function checkLevelCompletion() {
     if (isGameCompleted()) {
         playSound("level_complete.wav", 0.25);
 
@@ -279,6 +279,12 @@ function slide(layer, from, to) {
     startAnimation(from, to, block);
 }
 
+function completeMove() {
+    requestAnimationFrame(tickAnimation);
+    playSound("move_player.wav", 0.15);
+    canMove = false;
+}
+
 function move(x, y) {
     if (isLevelCompleted || !canMove || !levelData) return;
 
@@ -292,9 +298,7 @@ function move(x, y) {
     if (nextBlock === ".") {
         // Simple move
         slide(blocks, currPos, nextPos);
-        requestAnimationFrame(tickAnimation);
-        playSound("move_player.wav", 0.15);
-        canMove = false;
+        completeMove();
     }
     else if (nextBlock === "B") {
         // Push move
@@ -305,16 +309,14 @@ function move(x, y) {
         // Push
         slide(blocks, nextPos, boxPos);
         slide(blocks, currPos, nextPos);
-        requestAnimationFrame(tickAnimation);
-        playSound("move_player.wav", 0.15);
-        canMove = false;
+        completeMove();
     }
     else {
         // Ignore other block types
         return;
     }
 
-    checkCompletion();
+    checkLevelCompletion();
 }
 
 // Controls

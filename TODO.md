@@ -12,10 +12,11 @@ This file is a shared task-board. When editing, only:
 
 - [x] Publish game
 - [x] Animate movements
-- [ ] Design more levels (with multiple pushboxes)
+- [ ] Add rules explanation
+- [ ] Design more levels
+- Multiple pushboxes
 - [ ] Module grid helpers
 - [ ] Merge move functions
-- [ ] Merge btn-editor-remove functions
 - [ ] Undo move
 
 ### Audio
@@ -23,7 +24,7 @@ This file is a shared task-board. When editing, only:
 - [x] Level completed sound
 - [x] Move player sound
 - [x] Select level sound
-- [ ] Set sound volume
+- [x] Set sound volume
 - [ ] Background music
 
 ### G/Ideas
@@ -35,7 +36,8 @@ This file is a shared task-board. When editing, only:
 
 ## Editor
 
-- [ ] Flip grid
+- [x] Rotate grid
+- [x] Merge `btn-editor-remove` functions
 - [ ] Insert row/column
 - [ ] Easier delete row/column
 - [ ] Undo changes

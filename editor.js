@@ -5,39 +5,17 @@ import {getAssets, drawCanvas, setCanvas} from "./render.js";
 
 setCanvas("editor-canvas");
 
+// Init variables
+// ================================================================
+
 const FLOOR_TILES = new Set([".", "T", "X"]);
 const BLOCK_TILES = new Set([".", "#", "P", "B"]);
 
-function isFloorTile(ch) {
-    return FLOOR_TILES.has(ch);
-}
-
-function isBlockTile(ch) {
-    return BLOCK_TILES.has(ch);
-}
-
-function createEmptyLayer(w, h, fill = ".") {
-    return Array.from({length: h}, () => Array.from({length: w}, () => fill));
-}
-
-function cloneLayer(layer) {
-    return structuredClone(layer);
-}
-
 // Mutable gameplay layers (for editor canvas only)
 let level = 0;
-let editorFloor = getFloorLayer();
-let editorBlocks = getBlocksLayer();
+let editorFloor = getLayer("floor");
+let editorBlocks = getLayer("blocks");
 let editorTile = "#"; // palette char selection (either floor or blocks tile)
-
-// Backward compatible init helpers
-function getFloorLayer() {
-    return structuredClone(gameplay[level] ?? {}).floor ?? [];
-}
-
-function getBlocksLayer() {
-    return structuredClone(gameplay[level] ?? {}).blocks ?? [];
-}
 
 let lastRenderedAscii = "";
 
@@ -55,6 +33,33 @@ const el_btnResize = document.getElementById("btn-editor-resize");
 
 const LS_KEY_EDITOR_GRID_DIMS = "game.editorGridDims";
 
+// Helpers
+// ================================================================
+
+const TILE_SIZE = 64;
+
+const assets = getAssets(draw);
+
+function capitalizeFirst(str) {
+    return str.charAt(0).toUpperCase() + str.slice(1);
+}
+
+function draw() {
+    drawCanvas({floor: editorFloor, blocks: editorBlocks}, assets, true, []);
+}
+
+function getLayer(layer) {
+    return structuredClone(gameplay[level]?.[layer] ?? []);
+}
+
+function createEmptyLayer(w, h, fill = ".") {
+    return Array.from({length: h}, () => Array.from({length: w}, () => fill));
+}
+
+function cloneLayer(layer) {
+    return structuredClone(layer);
+}
+
 function clampInt(n, min, max) {
     n = Number(n);
     if (!Number.isFinite(n)) return min;
@@ -62,11 +67,16 @@ function clampInt(n, min, max) {
     return Math.min(max, Math.max(min, n));
 }
 
-function getSelectedDims() {
-    const w = clampInt(el_gridWidth?.value, 1, 64);
-    const h = clampInt(el_gridHeight?.value, 1, 64);
-    return [w, h];
+function getGridWidth() {
+    return editorFloor.length;
 }
+
+function getGridHeight() {
+    return editorFloor[0].length;
+}
+
+// Load saved data
+// ================================================================
 
 function loadSavedGridDimsOrDefault() {
     let w = el_gridWidth ? clampInt(el_gridWidth.value, 1, 64) : 6;
@@ -219,17 +229,6 @@ document.getElementById("btn-editor-apply").addEventListener("click", () => {
     }
 });
 
-// Load assets
-// ================================================================
-
-const TILE_SIZE = 64;
-
-const assets = getAssets(draw);
-
-function draw() {
-    drawCanvas({floor: editorFloor, blocks: editorBlocks}, assets, true, []);
-}
-
 // Remove row/column
 // ================================================================
 
@@ -278,60 +277,47 @@ function applyAndRedraw(nextFloor, nextBlocks) {
     draw();
 }
 
-document.getElementById("btn-editor-remove-row").addEventListener("click", () => {
-    const currH = editorFloor.length || editorBlocks.length;
-    const currW = editorFloor[0]?.length ?? editorBlocks[0]?.length ?? 0;
-
-    if (!currH || !currW) return;
-
-    const row1 = Number(el_removeRow?.value);
-    const rowIdx0 = row1 - 1;
-
-    if (!Number.isInteger(row1)) {
-        el_status.textContent = "Row index must be an integer (1-based).";
-        return;
+function validateIndex(idx0, limit, msg) {
+    if (!Number.isInteger(idx0)) {
+        el_status.textContent = msg.integer;
+        return false;
     }
-    if (rowIdx0 < 0 || rowIdx0 >= currH) {
-        el_status.textContent = `Row must be between 1 and ${currH}.`;
-        return;
+    if (idx0 < 0 || idx0 >= limit) {
+        el_status.textContent = msg.bounds;
+        return false;
     }
-    if (currH <= 1) {
-        el_status.textContent = "Cannot remove the last row.";
-        return;
+    if (limit <= 1) {
+        el_status.textContent = msg.last;
+        return false;
     }
+    return true;
+}
 
-    const nextFloor = removeRowFromLayer(editorFloor, rowIdx0);
-    const nextBlocks = removeRowFromLayer(editorBlocks, rowIdx0);
+function removeLine(text, dim, element, callback) {
+    if (!dim) return;
+    const lineId = Number(element?.value);
+
+    const msg = {
+        integer: `${capitalizeFirst(text)} index must be an integer (0-based).`,
+        bounds: `${capitalizeFirst(text)} must be between 0 and ${dim - 1}.`,
+        last: `Cannot remove the last ${text}.`,
+    };
+
+    if (!validateIndex(lineId, dim, msg)) return;
+
+    const nextFloor = callback(editorFloor, lineId);
+    const nextBlocks = callback(editorBlocks, lineId);
     applyAndRedraw(nextFloor, nextBlocks);
-    el_status.textContent = `Removed row ${row1}.`;
+
+    el_status.textContent = `Removed ${text} ${lineId}.`;
+}
+
+document.getElementById("btn-editor-remove-row").addEventListener("click", () => {
+    removeLine("row", getGridWidth(), el_removeRow, removeRowFromLayer);
 });
 
 document.getElementById("btn-editor-remove-col").addEventListener("click", () => {
-    const currH = editorFloor.length || editorBlocks.length;
-    const currW = editorFloor[0]?.length ?? editorBlocks[0]?.length ?? 0;
-
-    if (!currH || !currW) return;
-
-    const col1 = Number(el_removeCol?.value);
-    const colIdx0 = col1 - 1;
-
-    if (!Number.isInteger(col1)) {
-        el_status.textContent = "Column index must be an integer (1-based).";
-        return;
-    }
-    if (colIdx0 < 0 || colIdx0 >= currW) {
-        el_status.textContent = `Column must be between 1 and ${currW}.`;
-        return;
-    }
-    if (currW <= 1) {
-        el_status.textContent = "Cannot remove the last column.";
-        return;
-    }
-
-    const nextFloor = removeColumnFromLayer(editorFloor, colIdx0);
-    const nextBlocks = removeColumnFromLayer(editorBlocks, colIdx0);
-    applyAndRedraw(nextFloor, nextBlocks);
-    el_status.textContent = `Removed column ${col1}.`;
+    removeLine("column", getGridHeight(), el_removeCol, removeColumnFromLayer);
 });
 
 // Level selector
@@ -378,8 +364,8 @@ function createLevelSelector() {
 // ================================================================
 
 function resetEditor() {
-    editorFloor = getFloorLayer();
-    editorBlocks = getBlocksLayer();
+    editorFloor = getLayer("floor");
+    editorBlocks = getLayer("blocks");
 
     lastRenderedAscii = editorStateToText(editorFloor, editorBlocks);
     el_text.value = lastRenderedAscii;
@@ -390,6 +376,39 @@ document.getElementById("btn-editor-reset")?.addEventListener("click", () => {
     resetEditor();
     el_status.textContent = "Reset editor to current level.";
 });
+
+// Rotate grid
+// ================================================================
+
+function rotate90CWLayer(layer) {
+    // layer: [h][w] -> [w][h]
+    const h = layer?.length ?? 0;
+    const w = h > 0 ? (layer[0]?.length ?? 0) : 0;
+    if (!h || !w) return layer;
+
+    const out = Array.from({length: w}, () => Array.from({length: h}, () => "."));
+
+    for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+            // (x, y) -> (h-1-y, x) in [w][h] coordinates
+            out[x][h - 1 - y] = layer[y][x];
+        }
+    }
+
+    return out;
+}
+
+function rotateGrid90CW() {
+    const nextFloor = rotate90CWLayer(editorFloor);
+    const nextBlocks = rotate90CWLayer(editorBlocks);
+    applyAndRedraw(nextFloor, nextBlocks);
+    el_status.textContent = "Rotated grid 90° clockwise.";
+}
+
+document.getElementById("btn-editor-rotate90")?.addEventListener("click", () => {
+    rotateGrid90CW();
+});
+
 
 // Export to clipboard
 // ================================================================
@@ -418,6 +437,14 @@ document.getElementById("btn-editor-export").addEventListener("click", () => {
 // Place block
 // ================================================================
 
+function isFloorTile(ch) {
+    return FLOOR_TILES.has(ch);
+}
+
+function isBlockTile(ch) {
+    return BLOCK_TILES.has(ch);
+}
+
 function placeAt(x, y) {
     const h = editorFloor.length || editorBlocks.length;
     const w = (editorFloor[0]?.length ?? editorBlocks[0]?.length ?? 0);
@@ -430,9 +457,11 @@ function placeAt(x, y) {
     if (editorTile === ".") {
         editorFloor[y][x] = ".";
         editorBlocks[y][x] = ".";
-    } else if (isFloorTile(editorTile)) {
+    }
+    else if (isFloorTile(editorTile)) {
         editorFloor[y][x] = editorTile;
-    } else if (isBlockTile(editorTile)) {
+    }
+    else if (isBlockTile(editorTile)) {
         editorBlocks[y][x] = editorTile;
     }
 
@@ -470,7 +499,7 @@ document.querySelectorAll(".block-selector[data-tile]").forEach((btn) => {
     });
 });
 
-// Init
+// Resize grid
 // ================================================================
 
 function resizeGrid(newW, newH) {
@@ -511,12 +540,10 @@ function resizeGrid(newW, newH) {
     draw();
 }
 
-function persistGridDims(w, h) {
-    try {
-        localStorage.setItem(LS_KEY_EDITOR_GRID_DIMS, JSON.stringify({w, h}));
-    } catch {
-        // ignore
-    }
+function getSelectedDims() {
+    const w = clampInt(el_gridWidth?.value, 1, 64);
+    const h = clampInt(el_gridHeight?.value, 1, 64);
+    return [w, h];
 }
 
 function bindResizeUI() {
@@ -543,17 +570,30 @@ function bindResizeUI() {
     });
 }
 
-function init() {
-    loadSavedGridDimsOrDefault();
+// Init
+// ================================================================
 
+function persistGridDims(w, h) {
+    try {
+        localStorage.setItem(LS_KEY_EDITOR_GRID_DIMS, JSON.stringify({w, h}));
+    } catch {
+        // ignore
+    }
+}
+
+function loadLevelData() {
     const raw = localStorage.getItem(LS_KEY_EDITOR_LAST_LEVEL);
     const idx = Number(raw);
+
     if (Number.isInteger(idx) && idx >= 0 && idx < gameplay.length) {
         level = idx;
-        let editorFloor = getFloorLayer();
-        let editorBlocks = getBlocksLayer();
         resetEditor();
     }
+}
+
+function init() {
+    loadSavedGridDimsOrDefault();
+    loadLevelData();
 
     createLevelSelector();
     syncSelector();

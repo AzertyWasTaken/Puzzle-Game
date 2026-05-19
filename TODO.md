@@ -12,11 +12,9 @@ This file is a shared task-board. When editing, only:
 
 - [x] Publish game
 - [x] Animate movements
-- [ ] Add rules explanation
-- [ ] Design more levels
-- Multiple pushboxes
+- [x] Add rules explanation
+- [x] Design more levels
 - [ ] Module grid helpers
-- [ ] Merge move functions
 - [ ] Undo move
 
 ### Audio
